@@ -5,30 +5,33 @@ import { bearerAuth } from 'hono/bearer-auth';
 const app = new Hono();
 
 // --- CONFIGURATION ---
-// Bun tự động load file .env vào process.env
 const PORT = parseInt(process.env.PORT || "3000");
-const API_KEY = process.env.API_KEY || "1"; 
+const API_KEY = process.env.API_KEY || "1";
 const UPSTREAM_URL = process.env.UPSTREAM_URL || 'https://chat.dphn.ai/api/chat';
 
 console.log(`[Config] Port: ${PORT}`);
 console.log(`[Config] Upstream: ${UPSTREAM_URL}`);
-// Không log API_KEY vì lý do bảo mật
 
+// --- STRICT HEADERS ---
+// Lưu ý: Không set 'authority' thủ công vì fetch sẽ tự lấy từ URL.
+// Nếu set tay 'authority' trong Bun/Node có thể gây lỗi protocol.
 const UPSTREAM_HEADERS = {
-  'authority': 'chat.dphn.ai',
   'accept': 'text/event-stream',
   'accept-language': 'vi-VN,vi;q=0.9',
   'cache-control': 'no-cache',
   'content-type': 'application/json',
   'origin': 'https://chat.dphn.ai',
   'referer': 'https://chat.dphn.ai/',
-  'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"',
+  // Quan trọng: Copy chính xác string này
+  'sec-ch-ua': '"Chromium";v="137", "Not/A)Brand";v="24"', 
   'sec-ch-ua-mobile': '?1',
   'sec-ch-ua-platform': '"Android"',
   'sec-fetch-dest': 'empty',
   'sec-fetch-mode': 'cors',
   'sec-fetch-site': 'same-origin',
-  'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36'
+  'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36',
+  // Thêm header này vì curl dùng --compressed
+  'accept-encoding': 'gzip, deflate, br' 
 };
 
 const AVAILABLE_MODELS = [
@@ -53,10 +56,11 @@ app.post('/v1/chat/completions', async (c) => {
 
     console.log(`[Request] Model: ${model}`);
 
+    // Construct Payload chính xác như curl
     const payload = {
       messages: body.messages,
       model: model,
-      template: "logical",
+      template: "logical" 
     };
 
     const response = await fetch(UPSTREAM_URL, {
@@ -68,9 +72,12 @@ app.post('/v1/chat/completions', async (c) => {
     if (!response.ok) {
         const errText = await response.text();
         console.error(`[Upstream Error ${response.status}]`, errText);
-        return c.json({ error: { message: "Upstream error", details: errText } }, response.status as any);
+        // Trả về lỗi nguyên bản để debug
+        return c.json({ error: "Upstream Error", details: errText, status: response.status }, response.status as any);
     }
 
+    // Bun tự động xử lý giải nén (gzip/br) nếu server trả về nén
+    // Ta pipe trực tiếp body về client
     return new Response(response.body, {
       headers: {
         'Content-Type': 'text/event-stream',
