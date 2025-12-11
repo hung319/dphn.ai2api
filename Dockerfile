@@ -12,8 +12,5 @@ COPY src ./src
 # Expose port (Hono mặc định chạy 3000)
 EXPOSE 3000
 
-# Set biến môi trường mặc định (có thể override khi run docker)
-ENV API_KEY="1"
-
 # Chạy server
 CMD ["bun", "src/index.ts"]
